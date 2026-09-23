@@ -1,0 +1,63 @@
+{
+  "name": "dsh-archived-session-cleaner",
+  "displayName": "Archived Session Cleaner",
+  "version": "0.2.0",
+  "description": "彻底删除 DSH 里已归档的会话：清归档标记、会话数据与投影缓存",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cliii-one/dsh-archived-session-cleaner.git"
+  },
+  "homepage": "https://github.com/cliii-one/dsh-archived-session-cleaner#readme",
+  "bugs": {
+    "url": "https://github.com/cliii-one/dsh-archived-session-cleaner/issues"
+  },
+  "author": "cliii-one",
+  "main": "lib/index.js",
+  "exports": {
+    ".": {
+      "default": "./lib/index.js"
+    },
+    "./client": "./lib/client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "scripts": {
+    "check": "node scripts/check.mjs"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-slots"
+      ]
+    }
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "session",
+    "archive",
+    "cleanup"
+  ],
+  "peerDependencies": {
+    "@deepseek-ai/cordis": ">=4.0.1 <5.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

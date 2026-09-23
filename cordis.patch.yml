@@ -1,0 +1,8 @@
+# dsh-archived-session-cleaner bundle patch：把「归档会话清理」挂进 profile 组合层。
+#
+# 单个插件行，没有配置项——删除范围由 DSH 自身的存储布局决定
+#（见 lib/store.js 的说明），不需要用户调。
+
+- insert:
+    - id: archived-session-cleaner
+      name: 'dsh-archived-session-cleaner'
