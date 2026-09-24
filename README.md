@@ -75,11 +75,19 @@ unarchiveSession（摘归档标记）
 
 ## 安装
 
+**从 npm 在线安装**（发布后可用）：
+
 ```bash
-dsh plugin --profile <你的 profile> install dsh-archived-session-cleaner
+dsh plugin --profile <你的 profile> add dsh-archived-session-cleaner
 ```
 
-或用 Harness 的插件管理器装入本地目录。
+**从本地目录安装**（开发场景）：
+
+```bash
+dsh plugin --profile <你的 profile> add link:/path/to/dsh-archived-session-cleaner
+```
+
+也可以在 DSH 网页端的插件管理器里操作。安装后需要重启 DSH 生效。
 
 ## 用法
 
