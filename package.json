@@ -1,7 +1,7 @@
 {
   "name": "dsh-archived-session-cleaner",
   "displayName": "Archived Session Cleaner",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "彻底删除 DSH 里已归档的会话：清归档标记、会话数据与投影缓存",
   "type": "module",
   "license": "MIT",
