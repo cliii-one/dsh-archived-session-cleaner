@@ -1,0 +1,106 @@
+name: Publish
+
+# 打 tag（v0.1.0 这类）时自动发到 npm。
+#
+# 首次使用建议先手动触发一次并保持 dry_run=true，确认打包与校验都通过
+# 再真正发布——发布虽然 72 小时内可 unpublish，但版本号会留下痕迹。
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: '只打包校验，不真正发布'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  # npm provenance（供应链证明）需要 OIDC，会在 npm 页面显示"已证明来源"
+  id-token: write
+
+jobs:
+  publish:
+    name: publish to npm
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          # 让 npm 知道发布到官方 registry，并写入 .npmrc
+          registry-url: 'https://registry.npmjs.org'
+
+      # 版本号必须与 tag 一致，否则会发出错误的版本（甚至撞上已存在的版本）。
+      # 手动触发时没有 tag，跳过这一项。
+      - name: 校验 tag 与 package.json 版本一致
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          PKG="$(node -p 'require("./package.json").version')"
+          echo "tag=$TAG  package.json=$PKG"
+          if [ "$TAG" != "$PKG" ]; then
+            echo "::error::tag（v$TAG）与 package.json 的版本（$PKG）不一致"
+            exit 1
+          fi
+          echo "版本一致"
+
+      - name: 运行自检
+        run: node scripts/check.mjs
+
+      - name: 确认 npm token 已配置
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "$NODE_AUTH_TOKEN" ]; then
+            echo "::error::未配置 NPM_TOKEN。请在仓库 Settings → Secrets and variables → Actions 添加。"
+            exit 1
+          fi
+          echo "NPM_TOKEN 已配置（内容不打印）"
+
+      - name: 打包并检查内容
+        run: |
+          npm pack --dry-run 2>&1 | tee /tmp/pack.txt
+          node - <<'SCRIPT'
+          const { readFileSync } = require('node:fs')
+          const text = readFileSync('/tmp/pack.txt', 'utf8')
+          const section = /Tarball Contents([\s\S]*?)Tarball Details/.exec(text)
+          if (section === null) {
+            console.error('::error::找不到 Tarball Contents 区段')
+            process.exit(1)
+          }
+          const files = section[1].split('\n')
+            .map(line => /^\s*npm notice\s+\S+\s+(\S+)\s*$/.exec(line))
+            .filter(Boolean).map(m => m[1])
+          const forbidden = files.filter(f =>
+            /(^|\/)\.?(workbuddy-pool|trae-pool|account-pool)[.\w-]*\.json$/.test(f)
+            || /(^|\/)storage\.json$/.test(f)
+            || f.startsWith('node_modules/') || f.startsWith('scripts/')
+            || f.startsWith('.github/') || f.endsWith('.tgz'))
+          if (forbidden.length > 0) {
+            console.error('::error::发布包里有不该出现的文件: ' + forbidden.join(', '))
+            process.exit(1)
+          }
+          console.log(`发布包 ${files.length} 个文件，内容检查通过`)
+          SCRIPT
+
+      - name: 发布（dry run）
+        if: github.event_name == 'workflow_dispatch' && inputs.dry_run
+        run: |
+          echo "dry_run=true：只验证发布流程，不真正推送"
+          npm publish --dry-run
+
+      - name: 发布到 npm
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && !inputs.dry_run)
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          npm publish --access public --provenance
+          echo "已发布 $(node -p 'require("./package.json").name')@$(node -p 'require("./package.json").version')"

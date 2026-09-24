@@ -1,0 +1,108 @@
+name: CI
+
+# 这个插件是**零依赖**的纯 JS bundle：
+#   - 没有 dependencies / devDependencies，不需要安装任何东西
+#   - 自检只用 Node 内置模块
+#   - peerDependencies（pi-ai / cordis 等）由 DSH 宿主提供，CI 里没有
+# 所以这里刻意**不做 pnpm install** —— 装了反而会因为宿主包不存在而失败。
+# 唯一需要的环境是 Node.js。
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: check (node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        # 与 package.json 的 engines 对齐：^22.19.0 || >=24
+        node: ['22', '24']
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      # 不做 install：零依赖，装了只会引外部故障。
+
+      - name: 语法检查（全部源文件）
+        run: |
+          for f in lib/*.js scripts/*.mjs scripts/lib/*.mjs; do
+            node --check "$f"
+          done
+
+      - name: 运行自检（45 项）
+        run: node scripts/check.mjs
+
+      - name: 验证 package.json 合法且字段齐全
+        run: |
+          node -e '
+            const d = require("./package.json");
+            const need = ["name","version","description","license","repository","files"];
+            const missing = need.filter(k => !d[k]);
+            if (missing.length) { console.error("缺少字段: " + missing.join(", ")); process.exit(1); }
+            if (d.private === true) { console.error("private=true 会阻止发布"); process.exit(1); }
+            console.log("package.json OK — " + d.name + "@" + d.version);
+          '
+
+      - name: 验证发布包内容
+        run: |
+          npm pack --dry-run 2>&1 | tee /tmp/pack.txt
+          # 只提取「Tarball Contents」区段里的文件路径。
+          # 不能对整个输出 grep——npm 的输出尾部必然包含产物文件名
+          # （dsh-account-pool-0.1.0.tgz），用 .tgz 之类的规则会永远命中。
+          node - <<'SCRIPT'
+          const { readFileSync } = require('node:fs')
+          const text = readFileSync('/tmp/pack.txt', 'utf8')
+          const section = /Tarball Contents([\s\S]*?)Tarball Details/.exec(text)
+          if (section === null) {
+            console.error('::error::npm pack 输出里找不到 Tarball Contents 区段')
+            process.exit(1)
+          }
+          const files = section[1].split('\n')
+            .map(line => /^\s*npm notice\s+\S+\s+(\S+)\s*$/.exec(line))
+            .filter(Boolean)
+            .map(m => m[1])
+
+          if (files.length === 0) {
+            console.error('::error::没有解析到任何包内文件')
+            process.exit(1)
+          }
+          console.log(`包内 ${files.length} 个文件:`)
+          for (const f of files) console.log('  ' + f)
+
+          // 1) 凭证与开发文件绝不能进包
+          const forbidden = files.filter(f =>
+            /(^|\/)\.?(workbuddy-pool|trae-pool|account-pool)[.\w-]*\.json$/.test(f)
+            || /(^|\/)storage\.json$/.test(f)
+            || f.startsWith('node_modules/')
+            || f.startsWith('scripts/')
+            || f.startsWith('.github/')
+            || f.endsWith('.tgz'))
+          if (forbidden.length > 0) {
+            console.error('::error::发布包里出现不该有的文件: ' + forbidden.join(', '))
+            process.exit(1)
+          }
+
+          // 2) 核心文件必须在
+          for (const need of ['lib/index.js', 'lib/client.js', 'cordis.patch.yml', 'package.json']) {
+            if (!files.includes(need)) {
+              console.error('::error::发布包缺少 ' + need)
+              process.exit(1)
+            }
+          }
+          console.log('发布包内容检查通过')
+          SCRIPT
